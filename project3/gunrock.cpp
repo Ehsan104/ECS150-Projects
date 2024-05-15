@@ -53,7 +53,17 @@ void invoke_service_method(HttpService *service, HTTPRequest *request, HTTPRespo
   } else if (request->isHead()) {
     service->head(request, response);
   } else if (request->isGet()) {
-    service->get(request, response);
+    service->get(request, response); 
+    
+    //put in the rest of the requests after this get one which are, put, post, delete
+  /*
+  } else if (request->isPut()){ 
+    service -> put(request, response);
+  } else if (request->isPost()){
+    service -> post(request, response);
+  } else if (request->isDelete()){
+    service -> del(request, response);
+*/ 
   } else {
     // The server doesn't know about this method
     response->setStatus(501);
@@ -104,6 +114,59 @@ void handle_request(MySocket *client) {
   delete client;
 }
 
+//trying to make it a producer consumer implementation, like the coke machine
+//only using pthread to initialize the variables 
+//the producer creates the threads and the consumer takes those and uses the implemented handle_request function to handle the request
+deque<MySocket *> BUFFER; //create a buffer to store the clients
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; //initialize the mutex
+pthread_cond_t buffer_available = PTHREAD_COND_INITIALIZER; //initialize the condition variable
+pthread_cond_t client_available = PTHREAD_COND_INITIALIZER; //initialize the condition variable
+
+void *consumer(void *arg) {
+  MySocket *client; 
+
+  while (true) {
+    dthread_mutex_lock(&lock); //lock the mutex
+
+    while (BUFFER.empty()) { //if buffer is empty, wait for the client to be available
+      dthread_cond_wait(&client_available, &lock);
+    }
+
+    client = BUFFER.front(); //get the client from the front of the buffer
+    BUFFER.pop_front(); //this is to implement the FIFO 
+    dthread_cond_signal(&buffer_available); //signal that the buffer is available
+    dthread_mutex_unlock(&lock); //unlock the mutex
+    handle_request(client); //handle the request 
+  }
+}
+
+void *producer() {
+  pthread_t thread[THREAD_POOL_SIZE]; //create the threads for the thread pool
+  for (int i = 0; i < THREAD_POOL_SIZE; i++) { //create the threads for each of the new requests 
+    dthread_create(&thread[i], NULL, consumer, NULL);
+    dthread_detach(thread[i]); 
+  }
+
+  MyServerSocket *server = new MyServerSocket(PORT); //create the server socket
+  MySocket *client; //create the client socket
+
+  while (true) { //while there is a new request, keep accepting the new requests
+    sync_print("waiting_to_accept", ""); 
+    client = server->accept();
+    sync_print("client_accepted", "");
+
+    dthread_mutex_lock(&lock); 
+
+    while ((int)BUFFER.size() == BUFFER_SIZE) { //if the buffer is full, wait for the buffer to be available
+      dthread_cond_wait(&buffer_available, &lock); 
+    }
+
+    BUFFER.push_back(client); //push the client into the buffer
+    dthread_cond_signal(&client_available); //signal that the client is available
+    dthread_mutex_unlock(&lock); //unlock the mutex
+  }
+}
+
 int main(int argc, char *argv[]) {
 
   signal(SIGPIPE, SIG_IGN);
@@ -138,17 +201,13 @@ int main(int argc, char *argv[]) {
   set_log_file(LOGFILE);
 
   sync_print("init", "");
-  MyServerSocket *server = new MyServerSocket(PORT);
-  MySocket *client;
+  //MyServerSocket *server = new MyServerSocket(PORT);
+  //MySocket *client;
 
   // The order that you push services dictates the search order
   // for path prefix matching
   services.push_back(new FileService(BASEDIR));
-  
-  while(true) {
-    sync_print("waiting_to_accept", "");
-    client = server->accept();
-    sync_print("client_accepted", "");
-    handle_request(client);
-  }
+
+  producer(); //call the producer function to start the whole process 
+
 }
