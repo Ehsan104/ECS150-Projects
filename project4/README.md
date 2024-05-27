@@ -153,20 +153,17 @@ fixed-length field of size 28 bytes; the inode number is just an
 integer (4 bytes). When a directory is created, it should contain two
 entries: the name `.` (dot), which refers to this new directory's
 inode number, and `..` (dot-dot), which refers to the parent
-directory's inode number. For directory entries that are not yet in
-use (in an allocated 4-KB directory block), the inode number should be
-set to -1. This way, utilities can scan through the entries to check
-if they are valid.
+directory's inode number. For the root directory in a file system,
+both `.` and `..` refer to the root directory.
 
 When your server is started, it is passed the name of the file system
 image file. The image is created by a tool we provide, called `mkfs`.
 It is pretty self-explanatory and can be found
 [here](mkfs.c).
 
-When booting off of an existing image, your server should read in the
-superblock, bitmaps, and inode table, and keep in-memory versions of
-these. When writing to the image, you should update these on-disk
-structures accordingly.
+When accessing the files on an image, your server should read in the
+superblock, bitmaps, and inode table from disk as needed. When writing
+to the image, you should update these on-disk structures accordingly.
 
 One important aspect of your on-disk structure is that you need to
 assume that your server can crash at any time, so all disk writes need
@@ -233,6 +230,17 @@ that read information about a given disk image and write it out to the command l
 We have included an example disk image and expected outputs in the [disk_testing](gunrock_web/disk_testing)
 directory, but make sure that your utilities can handle multiple different disk
 image configurations and contents.
+
+To implement your file system utilities, you'll want to have implementaitons
+for read-only functions within `LocalFileSystem.cpp` and use these functions
+to implement the utilities. In particular, you should implement `stat` and
+`read` to implement `ds3ls` and `ds3cat` (remember, the root directory is
+always inode 0 in our file system). For `ds3bits` you'll want to implement
+`readSuperBlock`, `readInodeBitmap`, and `readDataBitmap`.
+
+Our hope is that with these utilities you can ensure that your read-only 
+functions work and you can use these utilities to help debug as you implement
+more functionality.
 
 Note: We will only test your utilities on correct disk images -- you can assume
 that all data on disk in the test cases is consistent and correct.
